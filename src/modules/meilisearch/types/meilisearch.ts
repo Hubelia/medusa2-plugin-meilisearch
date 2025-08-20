@@ -47,6 +47,21 @@ export type ProductTransformer<Result extends TransformedProduct = TransformedPr
   options?: TransformOptions,
 ) => Promise<Result>
 
+export type DocumentFetcherOptions = {
+  filters?: Record<string, unknown>
+  limit?: number
+  offset?: number
+  language?: string
+}
+
+export type DocumentFetcher<T = any> = (container: any, options: DocumentFetcherOptions) => Promise<T[]>
+
+export type DocumentTransformer<T = any, Result = Record<string, any>> = (
+  document: T,
+  defaultTransformer?: (doc: T, options?: TransformOptions) => Result,
+  options?: TransformOptions,
+) => Promise<Result> | Result
+
 export interface MeilisearchPluginOptions {
   /**
    * Meilisearch client configuration
@@ -58,11 +73,16 @@ export interface MeilisearchPluginOptions {
    */
   settings?: {
     [key: string]: Omit<SearchTypes.IndexSettings, 'transformer'> & {
-      type: string
+      type?: string
       enabled?: boolean
       fields?: string[]
       indexSettings: Settings
-      transformer?: ProductTransformer<Record<string, any>>
+      transformer?: ProductTransformer<Record<string, any>> | DocumentTransformer<any, Record<string, any>>
+      /**
+       * Custom function to fetch documents for this index.
+       * If not provided, will use default fetcher based on type (e.g., products).
+       */
+      fetcher?: DocumentFetcher
     }
   }
 

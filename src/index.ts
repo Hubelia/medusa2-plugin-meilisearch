@@ -1,2 +1,5 @@
 export * from './modules/meilisearch/services'
 export * from './modules/meilisearch/types'
+export { syncDocumentsWorkflow } from './workflows/sync-documents'
+export { syncDocumentsStep } from './workflows/steps/sync-documents'
+export { default as meilisearchIndexSyncJob, type IndexSyncJobData } from './utils/index-sync-job-template'

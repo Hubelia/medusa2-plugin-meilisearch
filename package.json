@@ -1,12 +1,12 @@
 {
-  "name": "@rokmohar/medusa-plugin-meilisearch",
-  "version": "1.2.3",
+  "name": "@hubelia/medusa-plugin-meilisearch",
+  "version": "1.0.0",
   "description": "Meilisearch plugin for Medusa 2",
   "author": "Rok Mohar",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rokmohar/medusa-plugin-meilisearch.git"
+    "url": "git+https://github.com/Hubelia/medusa2-plugin-meilisearch.git"
   },
   "keywords": [
     "medusa",
@@ -85,6 +85,5 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "packageManager": "yarn@4.9.2"
+  }
 }

@@ -1,7 +1,13 @@
 import { SearchTypes } from '@medusajs/types'
 import { SearchUtils } from '@medusajs/utils'
 import { MeiliSearch } from 'meilisearch'
-import { meilisearchErrorCodes, MeilisearchPluginOptions } from '../types'
+import {
+  meilisearchErrorCodes,
+  MeilisearchPluginOptions,
+  DocumentFetcher,
+  DocumentFetcherOptions,
+  DocumentTransformer,
+} from '../types'
 import { transformProduct, TransformOptions } from '../utils/transformer'
 
 export class MeiliSearchService extends SearchUtils.AbstractSearchService {
@@ -58,6 +64,19 @@ export class MeiliSearchService extends SearchUtils.AbstractSearchService {
     }
 
     return Array.from(fields)
+  }
+
+  async getFieldsForIndex(indexKey: string) {
+    const indexConfig = this.config_.settings?.[indexKey]
+    if (!indexConfig || indexConfig.enabled === false) {
+      return ['*']
+    }
+
+    if (Array.isArray(indexConfig.fields)) {
+      return indexConfig.fields
+    }
+
+    return ['*']
   }
 
   async getIndexesByType(type: string) {
@@ -163,6 +182,55 @@ export class MeiliSearchService extends SearchUtils.AbstractSearchService {
     }
   }
 
+  async getDocumentFetcher(indexKey: string): Promise<DocumentFetcher | null> {
+    const indexConfig = this.config_.settings?.[indexKey]
+    if (!indexConfig || indexConfig.enabled === false) {
+      return null
+    }
+
+    // Return custom fetcher if provided
+    if (indexConfig.fetcher) {
+      return indexConfig.fetcher
+    }
+
+    // Default fetcher for products
+    if (indexConfig.type === SearchUtils.indexTypes.PRODUCTS) {
+      // Use arrow function to preserve 'this' context
+      return async (container: any, options: DocumentFetcherOptions) => {
+        const queryService = container.resolve('query')
+        const fields = await this.getFieldsForType(SearchUtils.indexTypes.PRODUCTS)
+
+        const { data: products } = await queryService.graph({
+          entity: 'product',
+          fields: fields,
+          pagination: {
+            take: options.limit,
+            skip: options.offset,
+          },
+          filters: {
+            status: 'published',
+            ...options.filters,
+          },
+        })
+
+        return products
+      }
+    }
+
+    // No fetcher available for this index type
+    return null
+  }
+
+  async fetchDocuments(indexKey: string, container: any, options: DocumentFetcherOptions = {}): Promise<any[]> {
+    const fetcher = await this.getDocumentFetcher(indexKey)
+    if (!fetcher) {
+      console.log(`No document fetcher configured for index: ${indexKey}. Returning empty array.`)
+      return []
+    }
+
+    return fetcher(container, options)
+  }
+
   private async getTransformedDocuments(indexKey: string, documents: any[], options?: TransformOptions) {
     if (!documents?.length) {
       return []
@@ -170,15 +238,26 @@ export class MeiliSearchService extends SearchUtils.AbstractSearchService {
 
     const indexConfig = (this.config_.settings || {})[indexKey]
 
+    // If a custom transformer is provided, use it
+    if (indexConfig?.transformer) {
+      // For products, provide the default transformer as second argument
+      if (indexConfig.type === SearchUtils.indexTypes.PRODUCTS) {
+        return Promise.all(documents.map((doc) => indexConfig.transformer!(doc, transformProduct, { ...options })))
+      }
+
+      // For other types, transformer handles everything
+      return Promise.all(
+        documents.map((doc) => (indexConfig.transformer! as DocumentTransformer)(doc, undefined, { ...options })),
+      )
+    }
+
+    // Default transformations based on type
     switch (indexConfig?.type) {
       case SearchUtils.indexTypes.PRODUCTS:
-        return Promise.all(
-          documents.map(
-            (doc) => indexConfig.transformer?.(doc, transformProduct, { ...options }) ?? transformProduct(doc, options),
-          ),
-        )
+        return Promise.all(documents.map((doc) => transformProduct(doc, options)))
 
       default:
+        // For custom types without transformers, return documents as-is
         return documents
     }
   }

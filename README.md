@@ -8,6 +8,9 @@ This plugin integrates MeiliSearch with your Medusa e-commerce store and adds su
 - Real-time indexing
 - Typo-tolerance
 - Faceted search
+- **Custom document fetching** - Index any data source with custom fetcher functions
+- **Generic document transformers** - Transform any document type, not just products
+- **Flexible index configuration** - Create custom indexes for orders, customers, or any entity
 - Internationalization (i18n) support with multiple strategies:
   1. Separate index per language
   2. Language-specific fields with suffix
@@ -124,6 +127,150 @@ Depending on your setup:
   Follow the [official Medusa documentation on worker mode](https://docs.medusajs.com/learn/production/worker-mode#content).  
   In this case, you **must add this plugin in the worker instance**, as the server instance does not handle event subscribers or background tasks.
 
+## Custom Document Fetching
+
+The plugin now supports indexing any type of document, not just products. You can provide custom fetcher functions to retrieve documents from any source and transform them for indexing.
+
+### Basic Custom Index Configuration
+
+```typescript
+{
+  resolve: '@rokmohar/medusa-plugin-meilisearch',
+  options: {
+    config: {
+      host: process.env.MEILISEARCH_HOST ?? '',
+      apiKey: process.env.MEILISEARCH_API_KEY ?? '',
+    },
+    settings: {
+      // Custom orders index
+      'custom-orders': {
+        type: 'orders',
+        enabled: true,
+        fields: ['id', 'display_id', 'email', 'created_at', 'status'],
+        indexSettings: {
+          searchableAttributes: ['display_id', 'email'],
+          displayedAttributes: ['id', 'display_id', 'email', 'created_at', 'status'],
+          filterableAttributes: ['id', 'status', 'created_at'],
+        },
+        // Custom fetcher function
+        fetcher: async (container, options) => {
+          const orderService = container.resolve('order')
+          return await orderService.list({
+            filters: options.filters,
+            take: options.limit,
+            skip: options.offset,
+          })
+        },
+      },
+      
+      // Custom customers index
+      'custom-customers': {
+        type: 'customers',
+        enabled: true,
+        fields: ['id', 'email', 'first_name', 'last_name', 'created_at'],
+        indexSettings: {
+          searchableAttributes: ['email', 'first_name', 'last_name'],
+          filterableAttributes: ['id', 'created_at'],
+        },
+        fetcher: async (container, options) => {
+          const customerService = container.resolve('customer')
+          return await customerService.list({
+            filters: options.filters,
+            take: options.limit,
+            skip: options.offset,
+          })
+        },
+      },
+    },
+  }
+}
+```
+
+### Custom Transformers
+
+You can also provide custom transformers to modify how documents are indexed:
+
+```typescript
+{
+  settings: {
+    'custom-orders': {
+      type: 'orders',
+      // ... other config
+      fetcher: async (container, options) => {
+        // Fetch your documents
+        const orderService = container.resolve('order')
+        return await orderService.list({ /* ... */ })
+      },
+      // Custom transformer
+      transformer: async (order) => ({
+        id: order.id,
+        display_id: order.display_id,
+        customer_email: order.email,
+        total_amount: order.total,
+        status: order.status,
+        created_at: order.created_at,
+        // Add searchable text field combining multiple fields
+        searchable_text: `${order.display_id} ${order.email} ${order.status}`,
+        // Add computed fields
+        is_recent: new Date(order.created_at) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+      }),
+    },
+  }
+}
+```
+
+### Programmatic Document Syncing
+
+You can also sync custom indexes programmatically using the new workflows:
+
+```typescript
+import { syncDocumentsWorkflow } from '@rokmohar/medusa-plugin-meilisearch'
+
+// In your service or job
+const { result } = await syncDocumentsWorkflow(container).run({
+  input: {
+    indexKey: 'custom-orders',
+    filters: { status: 'completed' },
+    limit: 100,
+  },
+})
+
+console.log(`Synced ${result.added} documents, removed ${result.deleted}`)
+```
+
+### Custom Sync Jobs
+
+Create custom sync jobs for your indexes. You can use the simple approach or copy the template:
+
+**Simple approach:**
+```typescript
+// src/jobs/sync-search-suggestions.ts
+import { MedusaContainer } from '@medusajs/framework'
+import { syncDocumentsWorkflow } from '@rokmohar/medusa-plugin-meilisearch'
+
+export default async function syncSearchSuggestionsJob(container: MedusaContainer) {
+  const logger = container.resolve('logger')
+  logger.info('Starting search suggestions sync...')
+
+  const { result } = await syncDocumentsWorkflow(container).run({
+    input: {
+      indexKey: 'search_suggestions',
+      limit: 1000,
+    },
+  })
+
+  logger.info(`Synced ${result.added} suggestions, removed ${result.deleted}`)
+}
+
+export const config = {
+  name: 'sync-search-suggestions',
+  schedule: '0 */6 * * *', // Every 6 hours
+  numberOfExecutions: 1,
+}
+```
+
+**Template approach (for more complex syncing):**
+Copy the job template from `node_modules/@rokmohar/medusa-plugin-meilisearch/src/utils/index-sync-job-template.ts` to your jobs folder and customize it.
 
 ## i18n Configuration
 
@@ -256,6 +403,26 @@ Examples:
 
 ```http
 GET /store/meilisearch/hits?query=shirt&language=fr
+```
+
+### Searching Custom Indexes
+
+The search endpoint works with any configured index. To search custom indexes, you can use the MeiliSearch service directly:
+
+```typescript
+// In your API route or service
+const meilisearchService = container.resolve('meilisearch')
+
+// Search orders
+const orderResults = await meilisearchService.search('custom-orders', 'john@example.com', {
+  filter: 'status = completed',
+  limit: 10,
+})
+
+// Search customers  
+const customerResults = await meilisearchService.search('custom-customers', 'john', {
+  attributesToRetrieve: ['id', 'email', 'first_name', 'last_name'],
+})
 ```
 
 ## Auto-detection of Translatable Fields
