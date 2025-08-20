@@ -119,8 +119,6 @@ export class MeiliSearchService extends SearchUtils.AbstractSearchService {
       return this.client_.index(langIndexKey).addDocuments(transformedDocuments, { primaryKey: 'id' })
     } else {
       const transformedDocuments = await this.getTransformedDocuments(indexKey, documents, i18nOptions, container)
-      this._logger.info('add documents')
-      this._logger.info(JSON.stringify(transformedDocuments, null, 2))
       return this.client_.index(indexKey).addDocuments(transformedDocuments, { primaryKey: 'id' })
     }
   }

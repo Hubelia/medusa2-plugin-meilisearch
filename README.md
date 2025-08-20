@@ -87,11 +87,21 @@ module.exports = defineConfig({
               filterableAttributes: ['id', 'handle'],
             },
             primaryKey: 'id',
-            // Create your own transformer
-            /*transformer: (product) => ({
-              id: product.id,
-              // other attributes...
-            }),*/
+            // Create your own transformer with container access
+            /*transformer: async (product, container, defaultTransformer, options) => {
+              // Access services from container if needed
+              const pricingService = container.resolve('pricing')
+              const prices = await pricingService.calculatePrices(product.id)
+              
+              // Use the default transformer and enhance it
+              const defaultResult = await defaultTransformer(product, options)
+              
+              return {
+                ...defaultResult,
+                calculated_prices: prices,
+                // other custom attributes...
+              }
+            },*/
           },
         },
         i18n: {
@@ -188,7 +198,7 @@ The plugin now supports indexing any type of document, not just products. You ca
 
 ### Custom Transformers
 
-You can also provide custom transformers to modify how documents are indexed:
+You can also provide custom transformers to modify how documents are indexed. The transformer receives the container as the second parameter, allowing you to access any registered service:
 
 ```typescript
 {
@@ -201,19 +211,31 @@ You can also provide custom transformers to modify how documents are indexed:
         const orderService = container.resolve('order')
         return await orderService.list({ /* ... */ })
       },
-      // Custom transformer
-      transformer: async (order) => ({
-        id: order.id,
-        display_id: order.display_id,
-        customer_email: order.email,
-        total_amount: order.total,
-        status: order.status,
-        created_at: order.created_at,
-        // Add searchable text field combining multiple fields
-        searchable_text: `${order.display_id} ${order.email} ${order.status}`,
-        // Add computed fields
-        is_recent: new Date(order.created_at) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
-      }),
+      // Custom transformer with container access
+      transformer: async (order, container) => {
+        // Access any service from the container
+        const taxService = container.resolve('tax')
+        const regionService = container.resolve('region')
+        const region = await regionService.retrieve(order.region_id)
+        
+        // Calculate additional fields using services
+        const calculatedTax = await taxService.calculate(order.total, region)
+        
+        return {
+          id: order.id,
+          display_id: order.display_id,
+          customer_email: order.email,
+          total_amount: order.total,
+          total_with_tax: order.total + calculatedTax,
+          status: order.status,
+          created_at: order.created_at,
+          region_name: region.name,
+          // Add searchable text field combining multiple fields
+          searchable_text: `${order.display_id} ${order.email} ${order.status} ${region.name}`,
+          // Add computed fields
+          is_recent: new Date(order.created_at) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        }
+      },
     },
   }
 }

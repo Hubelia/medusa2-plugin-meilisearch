@@ -68,7 +68,7 @@ export const syncDocumentsStep = createStep(
     const documentsToDelete = existingDocumentIds.filter((id) => !documentIds.includes(id))
 
     // Add or update documents
-    await meilisearchService.addDocuments(indexKey, documents, language)
+    await meilisearchService.addDocuments(indexKey, documents, language, container)
 
     // Delete removed documents
     if (documentsToDelete.length > 0) {

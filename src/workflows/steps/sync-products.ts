@@ -24,6 +24,7 @@ export const syncProductsStep = createStep(
         take: limit,
         skip: offset,
       },
+
       filters: {
         status: 'published',
         ...filters,
@@ -48,7 +49,9 @@ export const syncProductsStep = createStep(
     const productsToDelete = Array.from(existingProductIds).filter((id) => !products.some((p) => p.id === id))
 
     // ADD DOCUMENTS
-    await Promise.all(productIndexes.map((index) => meilisearchService.addDocuments(index, products, undefined, container)))
+    await Promise.all(
+      productIndexes.map((index) => meilisearchService.addDocuments(index, products, undefined, container)),
+    )
     await Promise.all(productIndexes.map((index) => meilisearchService.deleteDocuments(index, productsToDelete)))
 
     return new StepResponse({
