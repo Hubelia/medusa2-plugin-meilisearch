@@ -43,6 +43,7 @@ export type DefaultProductTransformer<Result extends TransformedProduct = Transf
 
 export type ProductTransformer<Result extends TransformedProduct = TransformedProduct> = (
   document: ProductDTO,
+  container: any,
   defaultTransformer: DefaultProductTransformer,
   options?: TransformOptions,
 ) => Promise<Result>
@@ -58,6 +59,7 @@ export type DocumentFetcher<T = any> = (container: any, options: DocumentFetcher
 
 export type DocumentTransformer<T = any, Result = Record<string, any>> = (
   document: T,
+  container: any,
   defaultTransformer?: (doc: T, options?: TransformOptions) => Result,
   options?: TransformOptions,
 ) => Promise<Result> | Result

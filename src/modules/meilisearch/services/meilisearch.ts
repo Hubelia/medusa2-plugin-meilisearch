@@ -9,6 +9,7 @@ import {
   DocumentTransformer,
 } from '../types'
 import { transformProduct, TransformOptions } from '../utils/transformer'
+import { Logger } from '@medusajs/medusa'
 
 export class MeiliSearchService extends SearchUtils.AbstractSearchService {
   static identifier = 'index-meilisearch'
@@ -17,11 +18,15 @@ export class MeiliSearchService extends SearchUtils.AbstractSearchService {
 
   protected readonly config_: MeilisearchPluginOptions
   protected readonly client_: MeiliSearch
+  protected _logger: Logger
+  protected container_: any
 
   constructor(container: any, options: MeilisearchPluginOptions) {
     super(container, options)
 
     this.config_ = options
+    this._logger = container.logger
+    this.container_ = container
 
     if (!options.config?.apiKey) {
       throw Error(
@@ -101,7 +106,7 @@ export class MeiliSearchService extends SearchUtils.AbstractSearchService {
     return this.client_.index(indexKey)
   }
 
-  async addDocuments(indexKey: string, documents: any[], language?: string) {
+  async addDocuments(indexKey: string, documents: any[], language?: string, container?: any) {
     const { i18n } = this.config_
     const i18nOptions = {
       i18n,
@@ -110,16 +115,18 @@ export class MeiliSearchService extends SearchUtils.AbstractSearchService {
 
     if (i18n?.strategy === 'separate-index') {
       const langIndexKey = this.getLanguageIndexKey(indexKey, language || i18n.defaultLanguage)
-      const transformedDocuments = await this.getTransformedDocuments(indexKey, documents, i18nOptions)
+      const transformedDocuments = await this.getTransformedDocuments(indexKey, documents, i18nOptions, container)
       return this.client_.index(langIndexKey).addDocuments(transformedDocuments, { primaryKey: 'id' })
     } else {
-      const transformedDocuments = await this.getTransformedDocuments(indexKey, documents, i18nOptions)
+      const transformedDocuments = await this.getTransformedDocuments(indexKey, documents, i18nOptions, container)
+      this._logger.info('add documents')
+      this._logger.info(JSON.stringify(transformedDocuments, null, 2))
       return this.client_.index(indexKey).addDocuments(transformedDocuments, { primaryKey: 'id' })
     }
   }
 
-  async replaceDocuments(indexKey: string, documents: any[], language?: string) {
-    return this.addDocuments(indexKey, documents, language)
+  async replaceDocuments(indexKey: string, documents: any[], language?: string, container?: any) {
+    return this.addDocuments(indexKey, documents, language, container)
   }
 
   async deleteDocument(indexKey: string, documentId: string, language?: string) {
@@ -231,23 +238,33 @@ export class MeiliSearchService extends SearchUtils.AbstractSearchService {
     return fetcher(container, options)
   }
 
-  private async getTransformedDocuments(indexKey: string, documents: any[], options?: TransformOptions) {
+  private async getTransformedDocuments(
+    indexKey: string,
+    documents: any[],
+    options?: TransformOptions,
+    container?: any,
+  ) {
     if (!documents?.length) {
       return []
     }
 
     const indexConfig = (this.config_.settings || {})[indexKey]
+    const transformerContainer = container || this.container_
 
     // If a custom transformer is provided, use it
     if (indexConfig?.transformer) {
-      // For products, provide the default transformer as second argument
+      // For products, provide the default transformer after container
       if (indexConfig.type === SearchUtils.indexTypes.PRODUCTS) {
-        return Promise.all(documents.map((doc) => indexConfig.transformer!(doc, transformProduct, { ...options })))
+        return Promise.all(
+          documents.map((doc) => indexConfig.transformer!(doc, transformerContainer, transformProduct, { ...options })),
+        )
       }
 
       // For other types, transformer handles everything
       return Promise.all(
-        documents.map((doc) => (indexConfig.transformer! as DocumentTransformer)(doc, undefined, { ...options })),
+        documents.map((doc) =>
+          (indexConfig.transformer! as DocumentTransformer)(doc, transformerContainer, undefined, { ...options }),
+        ),
       )
     }
 
